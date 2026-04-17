@@ -58,9 +58,15 @@
         // 包裹在对象字段中
         if (typeof data === 'object') {
             for (const key of ['data', 'problems', 'result', 'list', 'items', 'questions']) {
-                if (Array.isArray(data[key]) && data[key].length > 0
-                        && data[key][0] && data[key][0].problemId) {
-                    storeProblems(data[key]);
+                const val = data[key];
+                if (Array.isArray(val) && val.length > 0 && val[0] && val[0].problemId) {
+                    storeProblems(val);
+                } else if (typeof val === 'string') {
+                    // 处理双重编码 JSON：字段值本身是 JSON 字符串（如 data.data 为字符串）
+                    const parsed = safeParseJSON(val);
+                    if (parsed) extractAndStore(parsed);
+                } else if (val && typeof val === 'object') {
+                    extractAndStore(val);
                 }
             }
         }
@@ -78,7 +84,10 @@
                 changed = true;
             }
         });
-        if (changed) updateBadge();
+        if (changed) {
+            updateBadge();
+            console.log('[雨课堂导出] 找到雨课堂问题信息:', Array.from(problemMap.values()));
+        }
     }
 
     // ── JSON 安全解析 ─────────────────────────────────────────────────────────
@@ -94,12 +103,18 @@
     function PatchedXHR() {
         const xhr = new OrigXHR();
         const origOpen = xhr.open.bind(xhr);
-        xhr.open = function (...args) {
+        xhr.open = function (method, url, ...rest) {
             xhr.addEventListener('load', function () {
-                const data = safeParseJSON(xhr.responseText);
-                if (data) extractAndStore(data);
+                const text = xhr.responseText;
+                const data = safeParseJSON(text);
+                if (data) {
+                    if (typeof url === 'string' && (url.includes('presentation') || url.includes('lesson'))) {
+                        console.log('[雨课堂导出] 收到雨课堂课件信息:', url, { data: text, type: 'xhr', url });
+                    }
+                    extractAndStore(data);
+                }
             });
-            return origOpen(...args);
+            return origOpen(method, url, ...rest);
         };
         return xhr;
     }
@@ -111,9 +126,16 @@
     const origFetch = window.fetch.bind(window);
     window.fetch = async function (...args) {
         const response = await origFetch(...args);
+        const url = typeof args[0] === 'string' ? args[0]
+                  : (args[0] instanceof Request ? args[0].url : '');
         response.clone().text().then(text => {
             const data = safeParseJSON(text);
-            if (data) extractAndStore(data);
+            if (data) {
+                if (typeof url === 'string' && (url.includes('presentation') || url.includes('lesson'))) {
+                    console.log('[雨课堂导出] 收到雨课堂课件信息:', url, { data: text, type: 'fetch', url });
+                }
+                extractAndStore(data);
+            }
         }).catch(() => {});
         return response;
     };

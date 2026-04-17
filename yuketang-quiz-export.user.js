@@ -40,6 +40,19 @@
         return Object.assign({}, base, { answers });
     }
 
+    // ── 工具：从原始题目对象中提取需要导出的字段 ───────────────────────────
+    function pickExportFields(p) {
+        return {
+            problemId:   p.problemId,
+            problemType: p.problemType,
+            body:        p.body,
+            options:     p.options    || [],
+            answers:     p.answers    || [],
+            limit:       p.limit      ?? null,
+            sendTime:    p.sendTime   || 0,
+        };
+    }
+
     // ── 提取并存储题目 ────────────────────────────────────────────────────────
 
     /**
@@ -72,7 +85,13 @@
             if (!p || !p.problemId) return;
             const id = String(p.problemId);
             if (problemMap.has(id)) {
-                problemMap.set(id, mergeProblem(problemMap.get(id), p));
+                const existing = problemMap.get(id);
+                const merged = mergeProblem(existing, p);
+                problemMap.set(id, merged);
+                // Badge reflects total count; update whenever a problem goes from unsent→sent
+                if ((existing.sendTime || 0) === 0 && (merged.sendTime || 0) > 0) {
+                    changed = true;
+                }
             } else {
                 problemMap.set(id, Object.assign({}, p));
                 changed = true;
@@ -234,18 +253,35 @@
             return;
         }
 
-        // 按 sendTime 降序排列（已发送的排前面），未发送(sendTime=0)排后面
-        const problems = Array.from(problemMap.values()).sort((a, b) => {
-            if (b.sendTime !== a.sendTime) return b.sendTime - a.sendTime;
+        // 按 sendTime 升序排列（已发送题目按课堂顺序排列），未发送(sendTime=0)排最后
+        const sortedProblems = Array.from(problemMap.values()).sort((a, b) => {
+            const ta = a.sendTime || 0;
+            const tb = b.sendTime || 0;
+            if (ta !== tb) {
+                if (ta === 0) return 1;
+                if (tb === 0) return -1;
+                return ta - tb;
+            }
             return String(a.problemId).localeCompare(String(b.problemId));
         });
 
-        const json = JSON.stringify(problems, null, 2);
+        const problems = sortedProblems.map(pickExportFields);
+
+        // 导出包含元信息的 JSON 对象
+        const now = new Date();
+        const output = {
+            exportedAt:  now.toISOString(),
+            courseUrl:   location.href,
+            total:       problems.length,
+            sent:        problems.filter(p => p.sendTime > 0).length,
+            problems,
+        };
+
+        const json = JSON.stringify(output, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
 
         // 生成文件名：yuketang_quiz_YYYYMMDD_HHMMSS.json
-        const now = new Date();
         const pad = n => String(n).padStart(2, '0');
         const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
                  + `_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
@@ -263,7 +299,7 @@
 
         setTimeout(() => URL.revokeObjectURL(url), 5000);
         showToast(`✅ 已导出 ${problems.length} 道题目`);
-        console.info(`[雨课堂导出] 已下载 ${filename}，共 ${problems.length} 题`);
+        console.info(`[雨课堂导出] 已下载 ${filename}，共 ${problems.length} 题（已发送 ${output.sent} 题）`);
     }
 
     // ── 等待 body 后挂载 FAB ─────────────────────────────────────────────────

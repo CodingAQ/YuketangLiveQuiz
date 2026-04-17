@@ -53,6 +53,7 @@
 | `beep.count` | 蜂鸣次数 | `3` |
 | `beep.volume` | 音量（0~1） | `0.6` |
 | `notificationTimeout` | 浏览器通知显示时长（ms） | `10000` |
+| `autoCloseDelay` | 答题截止后卡片自动关闭延迟（ms） | `3000` |
 
 ## 注意事项
 

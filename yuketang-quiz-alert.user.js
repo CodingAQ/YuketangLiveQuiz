@@ -22,6 +22,8 @@
         beep: { frequency: 880, duration: 400, volume: 0.6, count: 3, interval: 500 },
         // 浏览器通知显示时长（毫秒）
         notificationTimeout: 10000,
+        // 答题时间结束后，悬浮卡片自动关闭的延迟（毫秒）
+        autoCloseDelay: 3000,
     };
 
     // ── 题目类型映射 ─────────────────────────────────────────────────────────
@@ -279,8 +281,8 @@
                 if (remaining === 0) {
                     clearInterval(countdownInterval);
                     countdownInterval = null;
-                    // 答题时间到，延迟 3 秒后自动关闭卡片
-                    setTimeout(hideCard, 3000);
+                    // 答题时间到，延迟后自动关闭卡片
+                    setTimeout(hideCard, CONFIG.autoCloseDelay);
                 }
             }, 500);
         }

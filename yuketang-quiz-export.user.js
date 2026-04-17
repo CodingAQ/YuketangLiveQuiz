@@ -49,23 +49,35 @@
     function extractAndStore(data) {
         if (!data) return;
 
-        // 直接是题目数组
+        // 直接是题目数组（每项有 problemId）
         if (Array.isArray(data) && data.length > 0 && data[0] && data[0].problemId) {
             storeProblems(data);
             return;
         }
 
+        // slides 数组：每项形如 { problem: { problemId, ... } }
+        // 对应 /api/v3/lesson/presentation/fetch 的响应结构
+        if (Array.isArray(data) && data.length > 0 && data[0] && data[0].problem && data[0].problem.problemId) {
+            storeProblems(data.map(s => s.problem));
+            return;
+        }
+
         // 包裹在对象字段中
-        if (typeof data === 'object') {
+        if (typeof data === 'object' && !Array.isArray(data)) {
+            // slides 字段（presentation API 的核心路径）
+            if (Array.isArray(data.slides)) {
+                extractAndStore(data.slides);
+            }
             for (const key of ['data', 'problems', 'result', 'list', 'items', 'questions']) {
                 const val = data[key];
-                if (Array.isArray(val) && val.length > 0 && val[0] && val[0].problemId) {
-                    storeProblems(val);
+                if (!val) continue;
+                if (Array.isArray(val)) {
+                    extractAndStore(val);
                 } else if (typeof val === 'string') {
-                    // 处理双重编码 JSON：字段值本身是 JSON 字符串（如 data.data 为字符串）
+                    // 处理双重编码 JSON：字段值本身是 JSON 字符串
                     const parsed = safeParseJSON(val);
                     if (parsed) extractAndStore(parsed);
-                } else if (val && typeof val === 'object') {
+                } else if (typeof val === 'object') {
                     extractAndStore(val);
                 }
             }

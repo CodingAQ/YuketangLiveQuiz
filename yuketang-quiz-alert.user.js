@@ -333,18 +333,32 @@
     function extractProblems(data) {
         if (!data) return;
 
-        // 直接是数组，且第一项包含 problemId
-        if (Array.isArray(data) && data.length > 0 && data[0].problemId) {
-            handleProblems(data);
+        // 直接是题目数组（某项含 problemId）
+        if (Array.isArray(data) && data.some(d => d && d.problemId)) {
+            handleProblems(data.filter(d => d && d.problemId));
             return;
         }
 
-        // 是对象，递归找 problemId / problems 字段
-        if (typeof data === 'object') {
-            // 常见包装结构: { data: [...] } / { problems: [...] } / { result: [...] }
+        // slides 数组：部分项形如 { problem: { problemId, ... } }，其余为普通幻灯片
+        // 对应 /api/v3/lesson/presentation/fetch 响应中 data.slides 的结构
+        if (Array.isArray(data) && data.some(s => s && s.problem && s.problem.problemId)) {
+            handleProblems(data.filter(s => s && s.problem && s.problem.problemId).map(s => s.problem));
+            return;
+        }
+
+        // 是对象，递归找常见包装字段
+        if (typeof data === 'object' && !Array.isArray(data)) {
+            // slides 字段（presentation API 的核心路径：data.slides）
+            if (Array.isArray(data.slides)) {
+                extractProblems(data.slides);
+            }
             for (const key of ['data', 'problems', 'result', 'list', 'items', 'questions']) {
-                if (Array.isArray(data[key])) {
-                    handleProblems(data[key]);
+                const val = data[key];
+                if (!val) continue;
+                if (Array.isArray(val)) {
+                    extractProblems(val);
+                } else if (typeof val === 'object') {
+                    extractProblems(val);
                 }
             }
         }
@@ -406,7 +420,15 @@
             super(...args);
             this.addEventListener('message', event => {
                 const data = safeParseJSON(event.data);
-                if (data) extractProblems(data);
+                if (!data) return;
+
+                // 参考 zly2006/yuketang-auto-answer：
+                // op=unlockproblem → 老师正式推送题目，problem.prob 为 problemId
+                if (data.op === 'unlockproblem' && data.problem && data.problem.prob) {
+                    console.info('[雨课堂提醒] 检测到 unlockproblem，problemId:', data.problem.prob);
+                }
+
+                extractProblems(data);
             });
         }
     }

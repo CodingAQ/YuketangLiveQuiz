@@ -50,21 +50,21 @@
         if (!data) return;
 
         // 直接是题目数组（每项有 problemId）
-        if (Array.isArray(data) && data.length > 0 && data[0] && data[0].problemId) {
-            storeProblems(data);
+        if (Array.isArray(data) && data.length > 0 && data.some(d => d && d.problemId)) {
+            storeProblems(data.filter(d => d && d.problemId));
             return;
         }
 
-        // slides 数组：每项形如 { problem: { problemId, ... } }
-        // 对应 /api/v3/lesson/presentation/fetch 的响应结构
-        if (Array.isArray(data) && data.length > 0 && data[0] && data[0].problem && data[0].problem.problemId) {
-            storeProblems(data.map(s => s.problem));
+        // slides 数组：部分项形如 { problem: { problemId, ... } }，其余为普通幻灯片
+        // 对应 /api/v3/lesson/presentation/fetch 响应中 data.slides 的结构
+        if (Array.isArray(data) && data.some(s => s && s.problem && s.problem.problemId)) {
+            storeProblems(data.filter(s => s && s.problem && s.problem.problemId).map(s => s.problem));
             return;
         }
 
         // 包裹在对象字段中
         if (typeof data === 'object' && !Array.isArray(data)) {
-            // slides 字段（presentation API 的核心路径）
+            // slides 字段（presentation API 的核心路径：data.slides）
             if (Array.isArray(data.slides)) {
                 extractAndStore(data.slides);
             }
@@ -121,7 +121,7 @@
                 const data = safeParseJSON(text);
                 if (data) {
                     if (typeof url === 'string' && (url.includes('presentation') || url.includes('lesson'))) {
-                        console.log('[雨课堂导出] 收到雨课堂课件信息:', url, { data: text, type: 'xhr', url });
+                        console.log('[雨课堂导出] 收到雨课堂课件信息:', url, { data: text, type: 'xhr' });
                     }
                     extractAndStore(data);
                 }
@@ -144,7 +144,7 @@
             const data = safeParseJSON(text);
             if (data) {
                 if (typeof url === 'string' && (url.includes('presentation') || url.includes('lesson'))) {
-                    console.log('[雨课堂导出] 收到雨课堂课件信息:', url, { data: text, type: 'fetch', url });
+                    console.log('[雨课堂导出] 收到雨课堂课件信息:', url, { data: text, type: 'fetch' });
                 }
                 extractAndStore(data);
             }
@@ -159,7 +159,33 @@
             super(...args);
             this.addEventListener('message', event => {
                 const data = safeParseJSON(event.data);
-                if (data) extractAndStore(data);
+                if (!data) return;
+
+                // 参考 zly2006/yuketang-auto-answer：
+                // op=unlockproblem → 老师正式推送题目，problem.prob 为 problemId
+                // op=probleminfo   → problemid 字段为 problemId
+                if (data.op === 'unlockproblem' && data.problem && data.problem.prob) {
+                    const id = String(data.problem.prob);
+                    if (problemMap.has(id)) {
+                        const existing = problemMap.get(id);
+                        // 标记为已发送（sendTime 取当前时间，若原本就有非零值则保留较大者）
+                        const sendTime = Math.max(existing.sendTime || 0, Date.now());
+                        problemMap.set(id, Object.assign({}, existing, { sendTime }));
+                        updateBadge();
+                        console.log('[雨课堂导出] 老师推送题目 (unlockproblem):', id, problemMap.get(id));
+                    }
+                } else if (data.op === 'probleminfo' && data.problemid) {
+                    const id = String(data.problemid);
+                    if (problemMap.has(id)) {
+                        const existing = problemMap.get(id);
+                        const sendTime = Math.max(existing.sendTime || 0, Date.now());
+                        problemMap.set(id, Object.assign({}, existing, { sendTime }));
+                        updateBadge();
+                        console.log('[雨课堂导出] 老师推送题目 (probleminfo):', id, problemMap.get(id));
+                    }
+                }
+
+                extractAndStore(data);
             });
         }
     }
